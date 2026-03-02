@@ -30,6 +30,24 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json());
 
+// Root route
+app.get("/", (req, res) => {
+  res.json({
+    message: "Car Rental API is running",
+    version: "1.0.0",
+    endpoints: {
+      auth: "/api/auth",
+      users: "/api/users",
+      cars: "/api/cars",
+      bookings: "/api/bookings",
+      clients: "/api/clients",
+      services: "/api/services",
+      expenses: "/api/user-expenses",
+      assignments: "/api/car-assignments"
+    }
+  });
+});
+
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/init", initRoutes);
