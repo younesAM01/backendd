@@ -1,5 +1,5 @@
 import express from "express";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import { User } from "../models/User.js";
 import { CITIES } from "../config/constants.js";

@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import mongoose from "mongoose";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { User } from "../src/models/User.js";
 import { CITIES } from "../src/config/constants.js";
 

@@ -1,5 +1,5 @@
 import express from "express";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { User } from "../models/User.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
