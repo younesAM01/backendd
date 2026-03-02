@@ -31,6 +31,25 @@ export const emitServiceEvent = (event, service) => {
   io.to(cityRoom).emit(event, service);
 };
 
+// Helper function to emit car events
+export const emitCarEvent = (event, car) => {
+  const io = getIO();
+  const agencyRoom = `agency:${car.agencyId}`;
+  io.to(agencyRoom).emit(event, car);
+
+  if (car.agence) {
+    const cityRoom = `city:${car.agencyId}:${car.agence}`;
+    io.to(cityRoom).emit(event, car);
+  }
+};
+
+// Helper function to emit user expense events
+export const emitUserExpenseEvent = (event, expense) => {
+  const io = getIO();
+  const agencyRoom = `agency:${expense.agencyId}`;
+  io.to(agencyRoom).emit(event, expense);
+};
+
 
 
 

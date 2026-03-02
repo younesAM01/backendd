@@ -14,14 +14,18 @@ router.post("/login", validate(loginSchema), async (req, res) => {
     // Find user by email (first match, assuming emails are unique for testing)
     const user = await User.findOne({ email: email.toLowerCase() });
 
-    if (!user || !user.isActive) {
-      return res.status(401).json({ error: "Invalid credentials" });
+    if (!user) {
+      return res.status(401).json({ error: "No account found with this email" });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({ error: "Account disabled. Please contact an administrator" });
     }
 
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
 
     if (!isValidPassword) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Incorrect password. Please try again" });
     }
 
     const token = jwt.sign(

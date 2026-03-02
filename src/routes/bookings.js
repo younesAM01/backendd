@@ -10,7 +10,7 @@ import { BOOKING_STATUS, CAR_STATUS } from "../config/constants.js";
 
 const router = express.Router();
 
-// All routes require authentication/
+// All routes require authentication
 router.use(authenticate);
 
 // GET /api/bookings - List bookings (with optional filters)
@@ -30,7 +30,14 @@ router.get("/", async (req, res) => {
     }
 
     const bookings = await Booking.find(query)
-      .populate("carId", "plateNumber brand model year immatriculation")
+      .populate({
+        path: "carId",
+        select: "plateNumber brand model year immatriculation assignedAgent responsable",
+        populate: {
+          path: "assignedAgent",
+          select: "fullName email",
+        },
+      })
       .populate("createdBy", "fullName email")
       .populate("agent", "fullName email")
       .sort({ createdAt: -1 });
@@ -46,7 +53,14 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const booking = await Booking.findOne({ _id: req.params.id, agencyId: req.agencyId })
-      .populate("carId", "plateNumber brand model year immatriculation")
+      .populate({
+        path: "carId",
+        select: "plateNumber brand model year immatriculation assignedAgent responsable",
+        populate: {
+          path: "assignedAgent",
+          select: "fullName email",
+        },
+      })
       .populate("createdBy", "fullName email")
       .populate("agent", "fullName email");
     
@@ -141,7 +155,14 @@ router.post("/", validate(createBookingSchema), async (req, res) => {
       );
     }
 
-    await booking.populate("carId", "plateNumber brand model year immatriculation");
+    await booking.populate({
+      path: "carId",
+      select: "plateNumber brand model year immatriculation assignedAgent responsable",
+      populate: {
+        path: "assignedAgent",
+        select: "fullName email",
+      },
+    });
     await booking.populate("createdBy", "fullName email");
     await booking.populate("agent", "fullName email");
 
@@ -277,7 +298,14 @@ router.patch("/:id", validate(updateBookingSchema), async (req, res) => {
       );
     }
 
-    await booking.populate("carId", "plateNumber brand model year immatriculation");
+    await booking.populate({
+      path: "carId",
+      select: "plateNumber brand model year immatriculation assignedAgent responsable",
+      populate: {
+        path: "assignedAgent",
+        select: "fullName email",
+      },
+    });
     await booking.populate("createdBy", "fullName email");
     await booking.populate("agent", "fullName email");
 
@@ -291,13 +319,24 @@ router.patch("/:id", validate(updateBookingSchema), async (req, res) => {
   }
 });
 
-// DELETE /api/bookings/:id - Delete booking (admin only)
-router.delete("/:id", requireAdmin, async (req, res) => {
+// DELETE /api/bookings/:id - Delete booking (admin: all, agent: own bookings only)
+router.delete("/:id", async (req, res) => {
   try {
     const booking = await Booking.findOne({ _id: req.params.id, agencyId: req.agencyId });
 
     if (!booking) {
       return res.status(404).json({ error: "Booking not found" });
+    }
+
+    // Agents can only delete bookings they created or are assigned to
+    if (req.user.role !== "admin") {
+      const isAgentBooking = 
+        (booking.agent && booking.agent.toString() === req.user._id.toString()) ||
+        (booking.createdBy && booking.createdBy.toString() === req.user._id.toString());
+      
+      if (!isAgentBooking) {
+        return res.status(403).json({ error: "You can only delete your own bookings" });
+      }
     }
 
     // Check if there are other bookings for this car before setting it back to available

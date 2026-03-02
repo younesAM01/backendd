@@ -1,9 +1,10 @@
 import express from "express";
 import { Car } from "../models/Car.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { USER_ROLES, CAR_STATUS } from "../config/constants.js";
 import { validate } from "../middleware/validate.js";
 import { createCarSchema, updateCarSchema } from "../validators/car.js";
-import { CAR_STATUS } from "../config/constants.js";
+import { emitCarEvent } from "../utils/socket.js";
 
 const router = express.Router();
 
@@ -54,8 +55,8 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// POST /api/cars - Create car (admin only)
-router.post("/", requireAdmin, validate(createCarSchema), async (req, res) => {
+// POST /api/cars - Create car (admin/agent)
+router.post("/", validate(createCarSchema), async (req, res) => {
   try {
     // Normalize the plate number and immatriculation
     const plateNumber = (req.body.plateNumber || req.body.immatriculation || "").trim().toUpperCase();
@@ -105,6 +106,12 @@ router.post("/", requireAdmin, validate(createCarSchema), async (req, res) => {
       // Map carCity to agence for backward compatibility
       agence: req.body.agence || req.body.carCity,
     };
+
+    // Agents can create cars but cannot assign to other agents.
+    // Always assign cars they create to themselves.
+    if (req.user.role === USER_ROLES.AGENT) {
+      carData.assignedAgent = req.user._id;
+    }
     
     // Remove carName if it exists (old field, should not be in new schema)
     delete carData.carName;
@@ -121,6 +128,7 @@ router.post("/", requireAdmin, validate(createCarSchema), async (req, res) => {
 
     const car = new Car(carData);
     await car.save();
+    emitCarEvent("car:created", car);
 
     res.status(201).json(car);
   } catch (error) {
@@ -138,7 +146,7 @@ router.post("/", requireAdmin, validate(createCarSchema), async (req, res) => {
 });
 
 // PATCH /api/cars/:id - Update car
-// Admins can update all fields, agents can only update expense fields and mileageKm for their assigned cars
+// Admins can update all fields; agents can update cars assigned to them
 router.patch("/:id", validate(updateCarSchema), async (req, res) => {
   try {
     const car = await Car.findOne({ _id: req.params.id, agencyId: req.agencyId });
@@ -147,30 +155,19 @@ router.patch("/:id", validate(updateCarSchema), async (req, res) => {
       return res.status(404).json({ error: "Car not found" });
     }
 
-    // If user is an agent, check if car is assigned to them and restrict what they can update
+    // If user is an agent, only allow editing cars assigned to them
     if (req.user.role !== "admin") {
       // Check if car is assigned to this agent
       const assignedAgentId = car.assignedAgent?.toString() || car.assignedAgent;
       const userId = req.user._id.toString();
       
       if (assignedAgentId !== userId) {
-        return res.status(403).json({ error: "You can only update expenses for cars assigned to you" });
-      }
-
-      // Agents can only update expense fields and mileageKm
-      const allowedFields = ["vidange", "maintenance", "visiteTechnique", "insurance", "courroieDistribution", "mileageKm"];
-      const requestedFields = Object.keys(req.body);
-      const restrictedFields = requestedFields.filter(field => !allowedFields.includes(field));
-
-      if (restrictedFields.length > 0) {
-        return res.status(403).json({ 
-          error: `Agents can only update expense fields and mileage. Restricted fields: ${restrictedFields.join(", ")}` 
-        });
+        return res.status(403).json({ error: "You can only update cars assigned to you" });
       }
     }
 
-    // If updating plateNumber or immatriculation (admin only), check for duplicates
-    if ((req.body.plateNumber || req.body.immatriculation) && req.user.role === "admin") {
+    // If updating plateNumber or immatriculation, check for duplicates
+    if (req.body.plateNumber || req.body.immatriculation) {
       const newPlateNumber = req.body.plateNumber || req.body.immatriculation || car.plateNumber;
       const newImmatriculation = req.body.immatriculation || req.body.plateNumber || car.immatriculation;
       
@@ -193,31 +190,34 @@ router.patch("/:id", validate(updateCarSchema), async (req, res) => {
       // Map carCity to agence for backward compatibility (admin only)
       agence: req.user.role === "admin" ? (req.body.agence || req.body.carCity || undefined) : undefined,
     };
+
+    // Agents cannot change assignment manually.
+    if (req.user.role !== "admin") {
+      delete updateData.assignedAgent;
+      delete updateData.carCity;
+      if (req.body.agence) {
+        updateData.agence = req.body.agence;
+      }
+    }
     // Remove carCity if agence is provided
     if (updateData.agence) {
       delete updateData.carCity;
     }
 
-    // Handle carLoan dates (admin only)
-    if (updateData.carLoan && req.user.role === "admin") {
+    // Handle carLoan dates
+    if (updateData.carLoan) {
       if (updateData.carLoan.startDate) {
         updateData.carLoan.startDate = new Date(updateData.carLoan.startDate);
       }
       if (updateData.carLoan.endDate) {
         updateData.carLoan.endDate = new Date(updateData.carLoan.endDate);
       }
-    } else if (updateData.carLoan && req.user.role !== "admin") {
-      // Remove carLoan if agent tries to update it
-      delete updateData.carLoan;
     }
 
-    // Handle expense dates - filter out null values and convert dates
+    // Handle expense dates. Null means explicit deletion of that expense.
     const expenseFields = ["vidange", "maintenance", "visiteTechnique", "insurance", "courroieDistribution"];
     expenseFields.forEach(field => {
-      if (updateData[field] === null) {
-        // Remove null values - don't update the field if null is sent
-        delete updateData[field];
-      } else if (updateData[field] && updateData[field].date) {
+      if (updateData[field] && updateData[field].date) {
         updateData[field].date = new Date(updateData[field].date);
       }
     });
@@ -241,6 +241,7 @@ router.patch("/:id", validate(updateCarSchema), async (req, res) => {
     if (!updatedCar) {
       return res.status(404).json({ error: "Car not found" });
     }
+    emitCarEvent("car:updated", updatedCar);
 
     res.json(updatedCar);
   } catch (error) {
@@ -260,6 +261,7 @@ router.delete("/:id", requireAdmin, async (req, res) => {
     if (!car) {
       return res.status(404).json({ error: "Car not found" });
     }
+    emitCarEvent("car:deleted", car);
 
     res.json({ message: "Car deleted successfully" });
   } catch (error) {

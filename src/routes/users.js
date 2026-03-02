@@ -11,12 +11,25 @@ const router = express.Router();
 // All routes require authentication
 router.use(authenticate);
 
-// GET /api/users - List all users (admin only)
-router.get("/", requireAdmin, async (req, res) => {
+// GET /api/users - List users
+// Admins get all users, agents get active agents list (for booking assignment)
+router.get("/", async (req, res) => {
   try {
-    const users = await User.find({ agencyId: req.agencyId })
-      .select("-passwordHash")
-      .sort({ createdAt: -1 });
+    if (req.user.role === USER_ROLES.ADMIN) {
+      const users = await User.find({ agencyId: req.agencyId })
+        .select("-passwordHash")
+        .sort({ createdAt: -1 });
+      return res.json(users);
+    }
+
+    const users = await User.find({
+      agencyId: req.agencyId,
+      role: USER_ROLES.AGENT,
+      isActive: true,
+    })
+      .select("fullName email role isActive branchCity responsable")
+      .sort({ fullName: 1 });
+
     res.json(users);
   } catch (error) {
     console.error("Get users error:", error);

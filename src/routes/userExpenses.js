@@ -1,6 +1,7 @@
 import express from "express";
 import { UserExpense } from "../models/UserExpense.js";
-import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { authenticate } from "../middleware/auth.js";
+import { emitUserExpenseEvent } from "../utils/socket.js";
 
 const router = express.Router();
 
@@ -89,6 +90,8 @@ router.post("/", async (req, res) => {
 
     await expense.save();
     await expense.populate("userId", "fullName email");
+    // Include the user who made the change to prevent duplicate notifications
+    emitUserExpenseEvent("userExpense:created", { ...expense.toObject(), changedBy: req.user._id.toString() });
 
     res.status(201).json(expense);
   } catch (error) {
@@ -97,12 +100,31 @@ router.post("/", async (req, res) => {
   }
 });
 
-// PATCH /api/user-expenses/:id - Update user expense (admin only)
-router.patch("/:id", requireAdmin, async (req, res) => {
+// PATCH /api/user-expenses/:id - Update user expense
+// Admins can update any expense; agents can update only their own travel expenses
+router.patch("/:id", async (req, res) => {
   try {
+    const existingExpense = await UserExpense.findOne({ _id: req.params.id, agencyId: req.agencyId });
+
+    if (!existingExpense) {
+      return res.status(404).json({ error: "User expense not found" });
+    }
+
+    if (req.user.role !== "admin") {
+      const isOwnExpense = existingExpense.userId?.toString() === req.user._id.toString();
+      if (!isOwnExpense || existingExpense.type !== "travel") {
+        return res.status(403).json({ error: "Agents can only update their own travel expenses" });
+      }
+    }
+
     const updateData = { ...req.body };
     if (updateData.date) {
       updateData.date = new Date(updateData.date);
+    }
+
+    if (req.user.role !== "admin") {
+      updateData.type = "travel";
+      updateData.userId = req.user._id;
     }
 
     const expense = await UserExpense.findOneAndUpdate(
@@ -114,6 +136,8 @@ router.patch("/:id", requireAdmin, async (req, res) => {
     if (!expense) {
       return res.status(404).json({ error: "User expense not found" });
     }
+    // Include the user who made the change to prevent duplicate notifications
+    emitUserExpenseEvent("userExpense:updated", { ...expense.toObject(), changedBy: req.user._id.toString() });
 
     res.json(expense);
   } catch (error) {
@@ -122,14 +146,23 @@ router.patch("/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/user-expenses/:id - Delete user expense (admin only)
-router.delete("/:id", requireAdmin, async (req, res) => {
+// DELETE /api/user-expenses/:id - Delete user expense
+// Admins can delete any expense; agents can delete only their own travel expenses
+router.delete("/:id", async (req, res) => {
   try {
-    const expense = await UserExpense.findOneAndDelete({ _id: req.params.id, agencyId: req.agencyId });
+    const query = { _id: req.params.id, agencyId: req.agencyId };
+    if (req.user.role !== "admin") {
+      query.userId = req.user._id;
+      query.type = "travel";
+    }
+
+    const expense = await UserExpense.findOneAndDelete(query);
 
     if (!expense) {
       return res.status(404).json({ error: "User expense not found" });
     }
+    // Include the user who made the change to prevent duplicate notifications
+    emitUserExpenseEvent("userExpense:deleted", { ...expense.toObject(), changedBy: req.user._id.toString() });
 
     res.json({ message: "User expense deleted successfully" });
   } catch (error) {

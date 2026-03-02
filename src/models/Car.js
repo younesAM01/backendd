@@ -69,6 +69,8 @@ const carSchema = new mongoose.Schema(
       mileage: { type: Number },
       cost: { type: Number },
       description: { type: String },
+      lastMaintenanceKilometrage: { type: Number },
+      maintenanceIntervalKilometrage: { type: Number },
     },
     maintenance: {
       date: { type: Date },
