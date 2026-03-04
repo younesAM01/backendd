@@ -49,12 +49,17 @@ router.post("/", async (req, res) => {
   try {
     const { userId, type, date, amount, description } = req.body;
 
-    if (!userId || !type || !date || !amount) {
-      return res.status(400).json({ error: "userId, type, date, and amount are required" });
+    if (!type || !date || !amount) {
+      return res.status(400).json({ error: "type, date, and amount are required" });
     }
 
-    if (!["salary", "travel"].includes(type)) {
-      return res.status(400).json({ error: "type must be 'salary' or 'travel'" });
+    if (!["salary", "travel", "others"].includes(type)) {
+      return res.status(400).json({ error: "type must be 'salary', 'travel', or 'others'" });
+    }
+
+    // userId is required for salary and travel, but not for others
+    if (type !== "others" && !userId) {
+      return res.status(400).json({ error: "userId is required for salary and travel expenses" });
     }
 
     // If user is not admin, they can only create travel expenses for themselves
@@ -67,23 +72,37 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // If type is salary, only admins can create it
-    if (type === "salary" && req.user.role !== "admin") {
-      return res.status(403).json({ error: "Only admins can create salary expenses" });
+    // If type is salary or others, only admins can create it
+    if ((type === "salary" || type === "others") && req.user.role !== "admin") {
+      return res.status(403).json({ error: "Only admins can create salary and others expenses" });
+    }
+
+    // If type is others, typeName is required
+    if (type === "others" && !req.body.typeName) {
+      return res.status(400).json({ error: "typeName is required for 'others' expense type" });
     }
 
     const expenseData = {
       agencyId: req.agencyId,
-      userId,
       type,
       date: new Date(date),
       amount,
       description,
     };
     
+    // Only add userId if it's provided (not for "others" type)
+    if (userId) {
+      expenseData.userId = userId;
+    }
+    
     // Add travelType if it's a travel expense
     if (type === "travel" && req.body.travelType) {
       expenseData.travelType = req.body.travelType;
+    }
+    
+    // Add typeName if it's an others expense
+    if (type === "others" && req.body.typeName) {
+      expenseData.typeName = req.body.typeName;
     }
     
     const expense = new UserExpense(expenseData);

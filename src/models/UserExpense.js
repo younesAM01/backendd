@@ -10,18 +10,26 @@ const userExpenseSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: function() {
+        return this.type !== "others";
+      },
       index: true,
     },
     type: {
       type: String,
-      enum: ["salary", "travel"],
+      enum: ["salary", "travel", "others"],
       required: true,
     },
     travelType: {
       type: String,
       enum: ["standard", "others"],
       default: "standard",
+    },
+    typeName: {
+      type: String,
+      required: function() {
+        return this.type === "others";
+      },
     },
     date: {
       type: Date,

@@ -10,14 +10,14 @@
     "create-users": "node scripts/create-admin.js && node scripts/create-agent.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "mongoose": "^8.0.3",
-    "jsonwebtoken": "^9.0.2",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
-    "zod": "^3.22.4",
-    "socket.io": "^4.6.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.0.3",
+    "socket.io": "^4.6.1",
+    "zod": "^3.22.4"
   }
 }
-

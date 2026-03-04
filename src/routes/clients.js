@@ -24,6 +24,7 @@ router.get("/", async (req, res) => {
         { fullName: { $regex: search, $options: "i" } },
         { phone: { $regex: search, $options: "i" } },
         { passportOrCIN: { $regex: search, $options: "i" } },
+        { clientId: { $regex: search, $options: "i" } },
       ];
     }
 
